@@ -42,8 +42,9 @@ class Settings(BaseSettings):
     # Ingest: replace chunks in place when (source, title) already exists (no versioned source)
     INGEST_REPLACE_IF_EXISTS: bool = False
 
-    # OpenAI
+    # OpenAI / Gemini (OpenAI-compatible)
     OPENAI_API_KEY: str
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
     EMBEDDING_DIMENSION: int = 1536

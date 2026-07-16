@@ -97,7 +97,7 @@ class OpenAIClient(LLMClient):
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
 
-        self.base_url = "https://api.openai.com/v1"
+        self.base_url = settings.OPENAI_BASE_URL.rstrip("/")
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
