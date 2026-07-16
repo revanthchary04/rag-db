@@ -1,0 +1,83 @@
+# Observability overlay: Tempo (traces) + Prometheus (metrics) + Grafana.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up
+#
+# This turns on OpenTelemetry in the API and installs the `otel` extra at
+# start, exports spans to Tempo, and provisions Grafana with both dashboards
+# (metrics + trace waterfall). Grafana: http://localhost:3001 (anonymous admin).
+services:
+  api:
+    environment:
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: rag-eval-backend
+      # Base OTLP endpoint; the HTTP exporter POSTs spans to /v1/traces.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tempo:
+        condition: service_started
+    volumes:
+      # Mask the bind-mounted backend/.venv with an anonymous volume so a host
+      # (e.g. macOS) virtualenv never leaks into the Linux container. uv builds
+      # a fresh Linux venv inside this volume; the host dir is left untouched.
+      - /app/backend/.venv
+    # Install the otel extra (not in the base image) before launching.
+    command: >
+      sh -c "uv sync --extra otel &&
+             uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  # Only started with `--profile full`. Mask node_modules with an anonymous
+  # volume so a host (macOS) install never leaks into the Linux container —
+  # same trap as the api service's .venv.
+  web:
+    profiles: ["full"]
+    volumes:
+      - /workspace/node_modules
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: rag-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200" # Tempo query API (Grafana datasource)
+      - "4318:4318" # OTLP/HTTP receiver
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: rag-prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      api:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: rag-grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana-rag-eval-prometheus.json:/etc/grafana/dashboards/rag-eval.json:ro
+      - ./observability/grafana-rag-eval-traces.json:/etc/grafana/dashboards/rag-eval-traces.json:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+volumes:
+  tempo_data:

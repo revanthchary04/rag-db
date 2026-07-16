@@ -1,0 +1,103 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "id": 10,
+      "options": {
+        "mode": "markdown",
+        "content": "### RAG pipeline traces\n\nA query flows **server → `rag.retrieve` → `openai.embedding` / `db.vector_search` → `rag.generate` → `openai.chat`**. The table lists recent traces (slowest first) — click a **Trace ID** to open the waterfall, or paste one into the **traceId** variable to pin it in the panel below. Get a trace id from the app: it is logged as `trace_id` and shares the request's `query_log_id`.\n\nRequires the backend running with `OTEL_ENABLED=true` and a Tempo datasource."
+      },
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${tempo_ds}" },
+      "description": "Recent RAG traces for the selected service, slowest first. Click a Trace ID to open its waterfall.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 3 },
+      "id": 11,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${tempo_ds}" },
+          "filters": [],
+          "limit": 20,
+          "query": "{ resource.service.name = \"$service\" }",
+          "queryType": "traceql",
+          "refId": "A",
+          "tableType": "traces"
+        }
+      ],
+      "title": "Recent traces — $service",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "${tempo_ds}" },
+      "description": "Full span waterfall for the trace in the `traceId` variable. Click a Trace ID in the table above, or paste a trace id from the app logs / query log.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 12 },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "${tempo_ds}" },
+          "query": "$traceId",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Trace waterfall — $traceId",
+      "type": "traces"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["rag-eval", "traces"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "Tempo", "value": "tempo" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Traces datasource",
+        "multi": false,
+        "name": "tempo_ds",
+        "options": [],
+        "query": "tempo",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": { "text": "rag-eval-backend", "value": "rag-eval-backend" },
+        "hide": 0,
+        "label": "Service (OTEL_SERVICE_NAME)",
+        "name": "service",
+        "options": [
+          { "selected": true, "text": "rag-eval-backend", "value": "rag-eval-backend" }
+        ],
+        "query": "rag-eval-backend",
+        "type": "textbox"
+      },
+      {
+        "current": { "text": "", "value": "" },
+        "description": "Paste a 32-hex trace id, or click a Trace ID in the table above.",
+        "hide": 0,
+        "label": "traceId",
+        "name": "traceId",
+        "options": [{ "selected": true, "text": "", "value": "" }],
+        "query": "",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "RAG Eval — Traces (Tempo waterfall)",
+  "uid": "rag-eval-traces",
+  "version": 1
+}

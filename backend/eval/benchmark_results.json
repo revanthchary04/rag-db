@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-07-15T15:33:43Z",
+  "git_sha": "c8df1c1",
+  "n_cases": 78,
+  "top_k": 8,
+  "embedding_model": "text-embedding-3-small",
+  "chat_model": "gpt-4o-mini",
+  "pricing_usd_per_1m": {
+    "embedding_per_1m": 0.02,
+    "chat_input_per_1m": 0.15,
+    "chat_output_per_1m": 0.6
+  },
+  "markdown_table": "| Strategy | Hit@1 | Hit@5 | MRR | Retrieval latency p50 / p95 | Cost / 1k queries | OpenAI calls (embed / chat) |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n| `vector-similarity` | 76.9% | 94.9% | 0.840 | 227 ms / 331 ms | $0.0002 | 1 / 0.0 |\n| `hybrid-search` | 75.6% | 94.9% | 0.825 | 220 ms / 292 ms | $0.0002 | 1 / 0.0 |\n| `reranking` | 73.1% | 98.7% | 0.831 | 1119 ms / 1599 ms | $0.2361 | 1 / 1.0 |\n| `multi-query` | 73.1% | 94.9% | 0.827 | 2089 ms / 2906 ms | $0.0372 | 4 / 1.0 |",
+  "strategies": [
+    {
+      "strategy": "vector-similarity",
+      "n_cases": 78,
+      "n_errors": 0,
+      "hit_at_1": 0.7692307692307693,
+      "hit_at_5": 0.9487179487179487,
+      "mrr": 0.840491452991453,
+      "latency_p50_ms": 227.48618747573346,
+      "latency_p95_ms": 330.67446403438214,
+      "cost_per_1k_queries_usd": 0.00017153846153846142,
+      "avg_embed_calls": 1.0,
+      "avg_chat_calls": 0.0
+    },
+    {
+      "strategy": "hybrid-search",
+      "n_cases": 78,
+      "n_errors": 0,
+      "hit_at_1": 0.7564102564102564,
+      "hit_at_5": 0.9487179487179487,
+      "mrr": 0.8251068376068377,
+      "latency_p50_ms": 219.66379159130156,
+      "latency_p95_ms": 292.40585629595415,
+      "cost_per_1k_queries_usd": 0.00017153846153846142,
+      "avg_embed_calls": 1.0,
+      "avg_chat_calls": 0.0
+    },
+    {
+      "strategy": "reranking",
+      "n_cases": 78,
+      "n_errors": 0,
+      "hit_at_1": 0.7307692307692307,
+      "hit_at_5": 0.9871794871794872,
+      "mrr": 0.8305555555555555,
+      "latency_p50_ms": 1119.1256869351491,
+      "latency_p95_ms": 1599.1657483275033,
+      "cost_per_1k_queries_usd": 0.23608307692307692,
+      "avg_embed_calls": 1.0,
+      "avg_chat_calls": 1.0
+    },
+    {
+      "strategy": "multi-query",
+      "n_cases": 78,
+      "n_errors": 0,
+      "hit_at_1": 0.7307692307692307,
+      "hit_at_5": 0.9487179487179487,
+      "mrr": 0.8273504273504273,
+      "latency_p50_ms": 2089.165458455682,
+      "latency_p95_ms": 2906.0253204195756,
+      "cost_per_1k_queries_usd": 0.03723487179487182,
+      "avg_embed_calls": 4.0,
+      "avg_chat_calls": 1.0
+    }
+  ]
+}

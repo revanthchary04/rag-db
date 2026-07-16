@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ragdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: rag-api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ragdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1536}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Next.js dev server (optional): docker compose --profile full up
+  web:
+    profiles: ["full"]
+    image: node:20-bookworm-slim
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      # Keep node_modules container-local so host (macOS) native binaries
+      # (esbuild/swc) don't shadow the Linux ones the container installs.
+      - /workspace/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_API_BASE_URL: http://api:8000
+      # Drizzle (chat/auth) tables live in the same DB as the RAG tables.
+      POSTGRES_URL: postgresql://postgres:postgres@postgres:5432/ragdb
+    command:
+      - bash
+      - -lc
+      - |
+        corepack enable && corepack prepare pnpm@9 --activate &&
+        cd /workspace && pnpm install &&
+        pnpm db:migrate &&
+        pnpm dev --hostname 0.0.0.0 --port 3000
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:

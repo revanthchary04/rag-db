@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --bg: #09090b;
+        --panel: #131316;
+        --panel-2: #17171b;
+        --border: #26262b;
+        --fg: #fafafa;
+        --muted: #a1a1aa;
+        --muted-2: #71717a;
+        --pos: #34d399;
+        --neg: #fb7185;
+        --accent: #7dd3fc;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1280px;
+        height: 640px;
+      }
+      body {
+        font-family:
+          'Inter', ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+        position: relative;
+      }
+      .mono {
+        font-family: ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+      }
+      /* ambient glow + grid */
+      .glow {
+        position: absolute;
+        width: 900px;
+        height: 900px;
+        top: -420px;
+        left: -220px;
+        background: radial-gradient(circle, rgba(125, 211, 252, 0.16), transparent 62%);
+        filter: blur(8px);
+      }
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+        background-size: 40px 40px;
+        mask-image: radial-gradient(circle at 30% 20%, black, transparent 78%);
+      }
+      .wrap {
+        position: relative;
+        height: 100%;
+        display: grid;
+        grid-template-columns: 1.18fr 1fr;
+        gap: 40px;
+        padding: 64px 68px;
+      }
+      /* left column */
+      .left {
+        display: flex;
+        flex-direction: column;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 40px;
+      }
+      .logo {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        background: linear-gradient(145deg, #1c1c22, #101014);
+        border: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+      .logo::before {
+        content: '';
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 3px solid var(--accent);
+        border-right-color: transparent;
+        transform: rotate(-30deg);
+      }
+      .brand .name {
+        font-size: 21px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .brand .kicker {
+        font-size: 12.5px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted-2);
+        margin-top: 3px;
+      }
+      h1 {
+        font-size: 62px;
+        line-height: 1.02;
+        letter-spacing: -0.032em;
+        font-weight: 700;
+      }
+      h1 .accent {
+        background: linear-gradient(120deg, #e4e4e7, #a1a1aa);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .sub {
+        margin-top: 22px;
+        font-size: 21px;
+        line-height: 1.45;
+        color: var(--muted);
+        max-width: 560px;
+        letter-spacing: -0.006em;
+      }
+      .sub b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .chips {
+        margin-top: auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .chip {
+        font-size: 14px;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.02);
+        padding: 7px 13px;
+        border-radius: 999px;
+      }
+      .chip .dot {
+        color: var(--accent);
+        margin-right: 7px;
+      }
+      .url {
+        margin-top: 26px;
+        font-size: 16px;
+        color: var(--muted-2);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .url b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .url .sep {
+        color: var(--border);
+      }
+      /* right column — eval compare panel */
+      .right {
+        display: flex;
+        align-items: center;
+      }
+      .panel {
+        width: 100%;
+        background: linear-gradient(180deg, var(--panel-2), var(--panel));
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow:
+          0 40px 80px -30px rgba(0, 0, 0, 0.8),
+          inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        overflow: hidden;
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      .panel-head .title {
+        font-size: 13px;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+      }
+      .panel-head .title b {
+        color: var(--fg);
+      }
+      .tag {
+        font-size: 11.5px;
+        color: var(--accent);
+        border: 1px solid rgba(125, 211, 252, 0.3);
+        background: rgba(125, 211, 252, 0.07);
+        padding: 4px 9px;
+        border-radius: 6px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      td {
+        padding: 13px 20px;
+        font-size: 15px;
+        border-bottom: 1px solid rgba(38, 38, 43, 0.7);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .metric {
+        color: var(--muted);
+      }
+      .vals {
+        color: var(--muted-2);
+        text-align: right;
+      }
+      .vals .to {
+        color: var(--fg);
+      }
+      .delta {
+        text-align: right;
+        font-weight: 600;
+        width: 92px;
+      }
+      .delta.up {
+        color: var(--pos);
+      }
+      .delta.down {
+        color: var(--neg);
+      }
+      .flip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13px 20px;
+        background: rgba(251, 113, 133, 0.06);
+        border-top: 1px solid var(--border);
+      }
+      .flip .lbl {
+        font-size: 13px;
+        color: var(--neg);
+      }
+      .flip .ids {
+        font-size: 12.5px;
+        color: var(--muted-2);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="grid"></div>
+    <div class="wrap">
+      <div class="left">
+        <div class="brand">
+          <div class="logo"></div>
+          <div>
+            <div class="name">RAG Eval Observability</div>
+            <div class="kicker">retrieval · evaluation · traces</div>
+          </div>
+        </div>
+
+        <h1>Close the loop<br /><span class="accent">on RAG.</span></h1>
+        <p class="sub">
+          Chat over your documents, then <b>persist offline evals</b>, <b>compare runs by
+          <span class="mono">case_id</span></b>, and trace every answer in the query log — one
+          repo you can deploy.
+        </p>
+
+        <div class="chips">
+          <span class="chip"><span class="dot">◆</span>Multi-strategy retrieval</span>
+          <span class="chip"><span class="dot">◆</span>Persisted eval runs</span>
+          <span class="chip"><span class="dot">◆</span>Query-log traces</span>
+          <span class="chip"><span class="dot">◆</span>Export for CI</span>
+        </div>
+
+        <div class="url">
+          <b>pob-rag-chat.xyz</b>
+          <span class="sep">·</span>
+          <span class="mono">Next.js · FastAPI · pgvector</span>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="title">eval compare · <b class="mono">run 8f2 → a19</b></div>
+            <div class="tag">3 Hit@5 flips</div>
+          </div>
+          <table>
+            <tr>
+              <td class="metric">Hit@5</td>
+              <td class="vals">0.72&nbsp;→&nbsp;<span class="to">0.81</span></td>
+              <td class="delta up">+0.09</td>
+            </tr>
+            <tr>
+              <td class="metric">MRR</td>
+              <td class="vals">0.61&nbsp;→&nbsp;<span class="to">0.66</span></td>
+              <td class="delta up">+0.05</td>
+            </tr>
+            <tr>
+              <td class="metric">Faithfulness</td>
+              <td class="vals">0.90&nbsp;→&nbsp;<span class="to">0.84</span></td>
+              <td class="delta down">−0.06</td>
+            </tr>
+            <tr>
+              <td class="metric">p95 latency</td>
+              <td class="vals">840ms&nbsp;→&nbsp;<span class="to">612ms</span></td>
+              <td class="delta up">−27%</td>
+            </tr>
+          </table>
+          <div class="flip">
+            <span class="lbl mono">▼ regressed cases</span>
+            <span class="ids mono">chunking-03 · retrieval-07 · eval-11</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

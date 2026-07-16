@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # Scrape the backend's in-process metrics (histograms + token counters).
+  - job_name: rag-eval-api
+    metrics_path: /api/v1/metrics/prometheus
+    static_configs:
+      - targets: ['api:8000']
