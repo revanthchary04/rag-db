@@ -42,11 +42,15 @@ class Settings(BaseSettings):
     # Ingest: replace chunks in place when (source, title) already exists (no versioned source)
     INGEST_REPLACE_IF_EXISTS: bool = False
 
-    # OpenAI / Gemini (OpenAI-compatible)
+    # Chat LLM (OpenAI-compatible — Groq, Gemini, OpenAI, etc.)
     OPENAI_API_KEY: str
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
+
+    # Embeddings (separate provider if needed, falls back to OPENAI_API_KEY/BASE_URL)
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_BASE_URL: str = ""
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSION: int = 1536
 
     # OpenAI API settings

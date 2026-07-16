@@ -103,6 +103,14 @@ class OpenAIClient(LLMClient):
             "Content-Type": "application/json",
         }
 
+        # Separate embedding credentials (e.g. Groq for chat + Gemini for embeddings)
+        self.embedding_api_key = "".join((settings.EMBEDDING_API_KEY or self.api_key).split())
+        self.embedding_base_url = (settings.EMBEDDING_BASE_URL or self.base_url).rstrip("/")
+        self.embedding_headers = {
+            "Authorization": f"Bearer {self.embedding_api_key}",
+            "Content-Type": "application/json",
+        }
+
         # Request throttling disabled - single queries only make 2 API calls
         # (1 embedding + 1 chat completion), which shouldn't hit rate limits
         # If rate limits are hit, it's likely due to multiple concurrent requests
@@ -114,6 +122,7 @@ class OpenAIClient(LLMClient):
         url: str,
         json_data: dict[str, Any],
         operation: str,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """
         Make HTTP request with exponential backoff retry and throttling.
@@ -144,7 +153,7 @@ class OpenAIClient(LLMClient):
                     response = await client.request(
                         method=method,
                         url=url,
-                        headers=self.headers,
+                        headers=headers or self.headers,
                         json=json_data,
                     )
 
@@ -311,7 +320,7 @@ class OpenAIClient(LLMClient):
             return []
 
         model_name = model or self.embedding_model
-        url = f"{self.base_url}/embeddings"
+        url = f"{self.embedding_base_url}/embeddings"
 
         # OpenAI supports up to 2048 inputs per request
         # We'll batch them if needed
@@ -340,6 +349,7 @@ class OpenAIClient(LLMClient):
                     url=url,
                     json_data=json_data,
                     operation="create_embeddings",
+                    headers=self.embedding_headers,
                 )
                 usage_preview = response_data.get("usage") or {}
                 emb_span.set("gen_ai.usage.total_tokens", usage_preview.get("total_tokens"))
