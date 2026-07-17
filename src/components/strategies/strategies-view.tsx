@@ -257,7 +257,7 @@ export function StrategiesView() {
           . Method and full numbers in{' '}
           <a
             className="text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground"
-            href="https://github.com/Padraigobrien08/rag-eval-observe/blob/main/docs/BENCHMARKS.md"
+            href="https://github.com/revanthchary04/rag-eval-observe/blob/main/docs/BENCHMARKS.md"
             target="_blank"
             rel="noreferrer"
           >

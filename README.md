@@ -4,20 +4,16 @@
 
 **Chat over your documents — then persist offline evals, compare runs by `case_id`, and trace every answer in the query log. One repo you can deploy.**
 
-[![Live demo](https://img.shields.io/badge/demo-pob--rag--chat.xyz-0b0b0f?style=flat-square&logo=vercel&logoColor=white)](https://pob-rag-chat.xyz/)
-[![CI](https://img.shields.io/github/actions/workflow/status/Padraigobrien08/rag-eval-observe/ci.yml?branch=main&style=flat-square&label=CI&logo=github)](https://github.com/Padraigobrien08/rag-eval-observe/actions/workflows/ci.yml)
-[![Eval gate](https://img.shields.io/github/actions/workflow/status/Padraigobrien08/rag-eval-observe/eval-gate.yml?style=flat-square&label=eval%20gate&logo=github)](https://github.com/Padraigobrien08/rag-eval-observe/actions/workflows/eval-gate.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Padraigobrien08/rag-eval-observe/badges/coverage.json&style=flat-square)](https://github.com/Padraigobrien08/rag-eval-observe/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Padraigobrien08/rag-eval-observe?style=flat-square&logo=github&label=release&color=0b0b0f)](https://github.com/Padraigobrien08/rag-eval-observe/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/revanthchary04/rag-eval-observe/ci.yml?branch=main&style=flat-square&label=CI&logo=github)](https://github.com/revanthchary04/rag-eval-observe/actions/workflows/ci.yml)
+[![Eval gate](https://img.shields.io/github/actions/workflow/status/revanthchary04/rag-eval-observe/eval-gate.yml?style=flat-square&label=eval%20gate&logo=github)](https://github.com/revanthchary04/rag-eval-observe/actions/workflows/eval-gate.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/revanthchary04/rag-eval-observe/badges/coverage.json&style=flat-square)](https://github.com/revanthchary04/rag-eval-observe/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/revanthchary04/rag-eval-observe?style=flat-square&logo=github&label=release&color=0b0b0f)](https://github.com/revanthchary04/rag-eval-observe/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6+-3178c6.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776ab.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
 ![RAG Eval Observability — close the loop on RAG](./docs/images/social-preview.png)
 
-### [Try the live demo →](https://pob-rag-chat.xyz/)
-
-_Seeded with sample RAG documents — click an example query to see retrieval, citations, and per-answer latency/cost immediately._
 
 </div>
 
@@ -61,7 +57,7 @@ _The in-app compare view, keyed by `case_id`: the candidate run trips the **Regr
 
 |                                   Query-log explorer                                    |                                 System metrics                                 |
 | :-------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------: |
-| [![Query logs](./docs/images/live/query-logs.png)](https://pob-rag-chat.xyz/query-logs) | [![Metrics](./docs/images/live/metrics.png)](https://pob-rag-chat.xyz/metrics) |
+| ![Query logs](./docs/images/live/query-logs.png) | ![Metrics](./docs/images/live/metrics.png) |
 
 _Screenshots from the live deployment. The chat streams from the FastAPI RAG backend; the observability pages read the same Postgres._
 
@@ -80,7 +76,7 @@ Latency **percentiles (p50/p95/p99) per route and per pipeline stage** are expos
 Docker Compose brings up Postgres, the FastAPI backend, and the web app together:
 
 ```bash
-git clone https://github.com/Padraigobrien08/rag-eval-observe.git
+git clone https://github.com/revanthchary04/rag-eval-observe.git
 cd rag-eval-observe
 cp .env.example .env
 # edit .env: set OPENAI_API_KEY=sk-...

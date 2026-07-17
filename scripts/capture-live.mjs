@@ -1,6 +1,6 @@
 import { chromium } from '@playwright/test'
 
-const BASE = process.argv[2] || 'https://pob-rag-chat.xyz'
+const BASE = process.argv[2] || 'https://revanthchary04.github.io/rag-eval-observe'
 const OUT = process.argv[3] || 'docs/images/live'
 
 const browser = await chromium.launch()
