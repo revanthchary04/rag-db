@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # Ingest: replace chunks in place when (source, title) already exists (no versioned source)
     INGEST_REPLACE_IF_EXISTS: bool = False
 
+    # Per-device guest document isolation.
+    # Uploads from a browser are scoped to that device (via the X-Owner-Key header)
+    # and auto-deleted after GUEST_DOC_TTL_SECONDS. A background sweep runs every
+    # GUEST_DOC_CLEANUP_INTERVAL_SECONDS to purge expired rows. Set the TTL to 0 to
+    # keep guest uploads permanent (still device-scoped, just no expiry).
+    GUEST_DOC_TTL_SECONDS: int = 86400  # 24 hours
+    GUEST_DOC_CLEANUP_INTERVAL_SECONDS: int = 3600  # hourly sweep
+
     # Chat LLM (OpenAI-compatible — Groq, Gemini, OpenAI, etc.)
     OPENAI_API_KEY: str
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"

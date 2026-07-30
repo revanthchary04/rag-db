@@ -1,5 +1,7 @@
+import hashlib
 import json
 import statistics
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
@@ -29,71 +31,91 @@ class DocumentTooLargeError(IngestError):
     pass
 
 
-async def find_existing_document(source: str, title: str | None) -> dict[str, Any] | None:
+def _owner_id_suffix(owner_key: str | None) -> str:
+    """Short, stable per-owner suffix so two devices uploading the same source
+    (e.g. "notes") get distinct document ids instead of colliding on one row."""
+    if not owner_key:
+        return ""
+    digest = hashlib.sha256(owner_key.encode("utf-8")).hexdigest()[:8]
+    return f"-o{digest}"
+
+
+async def find_existing_document(
+    source: str, title: str | None, owner_key: str | None = None
+) -> dict[str, Any] | None:
     """
-    Find existing document by source and title.
+    Find existing document by source and title, scoped to the owner.
+
+    A device only matches its own prior uploads (``owner_key = <key>``); the
+    seeded public corpus (``owner_key IS NULL``) is matched only for public
+    ingests (``owner_key is None``).
 
     Args:
         source: Document source
         title: Document title
+        owner_key: Owning device key, or None for public ingests
 
     Returns:
         Document dict if found, None otherwise
     """
     pool = await get_db_pool()
+    owner_clause = "owner_key = $OWNER" if owner_key else "owner_key IS NULL"
     async with pool.acquire() as conn:
         if title:
-            row = await conn.fetchrow(
-                """
+            query = f"""
                 SELECT id, source, title, created_at
                 FROM documents
-                WHERE source = $1 AND title = $2
+                WHERE source = $1 AND title = $2 AND {owner_clause}
                 ORDER BY created_at DESC
                 LIMIT 1
-                """,
-                source,
-                title,
-            )
+                """.replace("$OWNER", "$3")
+            params: list[Any] = [source, title]
+            if owner_key:
+                params.append(owner_key)
+            row = await conn.fetchrow(query, *params)
         else:
-            row = await conn.fetchrow(
-                """
+            query = f"""
                 SELECT id, source, title, created_at
                 FROM documents
-                WHERE source = $1 AND title IS NULL
+                WHERE source = $1 AND title IS NULL AND {owner_clause}
                 ORDER BY created_at DESC
                 LIMIT 1
-                """,
-                source,
-            )
+                """.replace("$OWNER", "$2")
+            params = [source]
+            if owner_key:
+                params.append(owner_key)
+            row = await conn.fetchrow(query, *params)
 
         if row:
             return dict(row)
         return None
 
 
-def generate_document_id(source: str, title: str | None, version: int = 1) -> str:
+def generate_document_id(
+    source: str, title: str | None, version: int = 1, owner_key: str | None = None
+) -> str:
     """
-    Generate a unique document ID.
+    Generate a unique document ID (scoped to the owning device).
 
     Args:
         source: Document source
         title: Document title
         version: Version number (for idempotency)
+        owner_key: Owning device key (folded into the id to prevent cross-device
+            collisions); None for public documents
 
     Returns:
         Unique document ID
     """
+    suffix = _owner_id_suffix(owner_key)
     if version > 1:
         # Include version in the ID for new versions
         base_id = f"{source}-{title or 'untitled'}-v{version}".lower()
-        # Replace invalid characters
-        base_id = "".join(c if c.isalnum() or c in "-_" else "-" for c in base_id)
-        return base_id
     else:
         # Original document ID
         base_id = f"{source}-{title or 'untitled'}".lower()
-        base_id = "".join(c if c.isalnum() or c in "-_" else "-" for c in base_id)
-        return base_id
+    base_id = "".join(c if c.isalnum() or c in "-_" else "-" for c in base_id)
+    return f"{base_id}{suffix}"
 
 
 def generate_versioned_source(source: str, version: int) -> str:
@@ -119,6 +141,8 @@ async def ingest_document(
     is_markdown: bool = False,
     original_bytes: bytes | None = None,
     original_media_type: str | None = None,
+    owner_key: str | None = None,
+    ttl_seconds: int | None = None,
 ) -> dict[str, Any]:
     """
     Ingest a document into the database.
@@ -134,6 +158,11 @@ async def ingest_document(
         title: Document title (optional)
         text: Document text content
         is_markdown: Whether the text is markdown
+        owner_key: Owning device key. None means a public document (seeded corpus),
+            visible to everyone and never auto-expired. A non-None key scopes the
+            document to that device and (with ``ttl_seconds``) makes it auto-expire.
+        ttl_seconds: Lifetime in seconds for an owned document; ignored for public
+            documents. None disables expiry.
 
     Returns:
         Dict with document_id and chunks_created
@@ -148,8 +177,13 @@ async def ingest_document(
             f"Document size ({len(text)} chars) exceeds maximum ({MAX_DOCUMENT_SIZE} chars)"
         )
 
+    # Only owned (guest) uploads expire; the public seeded corpus is permanent.
+    expires_at = None
+    if owner_key and ttl_seconds and ttl_seconds > 0:
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+
     # Resolve document identity: replace in place, new versioned row, or new doc
-    existing = await find_existing_document(source, title)
+    existing = await find_existing_document(source, title, owner_key)
     replace_existing = bool(existing and settings.INGEST_REPLACE_IF_EXISTS)
 
     if replace_existing:
@@ -164,15 +198,19 @@ async def ingest_document(
         )
     elif existing:
         pool = await get_db_pool()
+        owner_clause = "owner_key = $2" if owner_key else "owner_key IS NULL"
+        version_params: list[Any] = [source]
+        if owner_key:
+            version_params.append(owner_key)
         async with pool.acquire() as conn:
             version_rows = await conn.fetch(
-                """
+                f"""
                 SELECT source
                 FROM documents
-                WHERE source = $1 OR source LIKE $1 || ' (v%'
+                WHERE (source = $1 OR source LIKE $1 || ' (v%') AND {owner_clause}
                 ORDER BY created_at DESC
                 """,
-                source,
+                *version_params,
             )
             versions = []
             for row in version_rows:
@@ -193,10 +231,10 @@ async def ingest_document(
             title=title,
             version=version,
         )
-        document_id = generate_document_id(source, title, version)
+        document_id = generate_document_id(source, title, version, owner_key)
         versioned_source = generate_versioned_source(source, version)
     else:
-        document_id = generate_document_id(source, title, 1)
+        document_id = generate_document_id(source, title, 1, owner_key)
         versioned_source = generate_versioned_source(source, 1)
 
     preprocess_report = preprocess_ingest_text(text)
@@ -298,7 +336,9 @@ async def ingest_document(
                             SET source = $2,
                                 title = $3,
                                 original_file = $4,
-                                original_media_type = $5
+                                original_media_type = $5,
+                                owner_key = $6,
+                                expires_at = $7
                             WHERE id = $1
                             """,
                             document_id,
@@ -306,25 +346,30 @@ async def ingest_document(
                             title,
                             original_bytes,
                             original_media_type,
+                            owner_key,
+                            expires_at,
                         )
                     else:
                         await conn.execute(
                             """
                             UPDATE documents
-                            SET source = $2, title = $3
+                            SET source = $2, title = $3, owner_key = $4, expires_at = $5
                             WHERE id = $1
                             """,
                             document_id,
                             versioned_source,
                             title,
+                            owner_key,
+                            expires_at,
                         )
                 else:
                     await conn.execute(
                         """
                         INSERT INTO documents (
-                            id, source, title, original_file, original_media_type
+                            id, source, title, original_file, original_media_type,
+                            owner_key, expires_at
                         )
-                        VALUES ($1, $2, $3, $4, $5)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                         ON CONFLICT (id) DO UPDATE
                         SET source = EXCLUDED.source,
                             title = EXCLUDED.title,
@@ -335,13 +380,17 @@ async def ingest_document(
                             original_media_type = COALESCE(
                                 EXCLUDED.original_media_type,
                                 documents.original_media_type
-                            )
+                            ),
+                            owner_key = EXCLUDED.owner_key,
+                            expires_at = EXCLUDED.expires_at
                         """,
                         document_id,
                         versioned_source,
                         title,
                         original_bytes,
                         original_media_type,
+                        owner_key,
+                        expires_at,
                     )
 
                 # Insert chunks

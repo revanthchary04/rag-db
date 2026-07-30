@@ -31,11 +31,13 @@ async def search_chunks_endpoint(
         embedding_response = await openai_client.create_embedding(search_request.query)
         query_embedding = embedding_response.embedding
 
-        # Search for similar chunks
+        # Search for similar chunks (scoped to the requesting device + public corpus)
+        owner_key = (request.headers.get("x-owner-key") or "").strip() or None
         chunks = await search_chunks(
             query_embedding=query_embedding,
             top_k=search_request.top_k,
             document_id=search_request.document_id,
+            owner_key=owner_key,
         )
 
         logger.info(

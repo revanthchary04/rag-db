@@ -4,6 +4,36 @@
 // This avoids mixed content and CORS issues
 const API_BASE_URL = '/api/backend'
 
+// Per-device isolation: a stable, random key kept in this browser's localStorage.
+// Uploaded documents are scoped to it on the backend, so another laptop (a
+// different key) never sees them. Cleared storage = a fresh guest profile.
+const OWNER_KEY_STORAGE = 'rag.ownerKey'
+
+/** Read (or lazily create) this device's owner key. Returns '' outside the browser. */
+export function getOwnerKey(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    let key = window.localStorage.getItem(OWNER_KEY_STORAGE)
+    if (!key) {
+      key =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      window.localStorage.setItem(OWNER_KEY_STORAGE, key)
+    }
+    return key
+  } catch {
+    // localStorage unavailable (private mode/SSR) — fall back to no isolation.
+    return ''
+  }
+}
+
+/** Merge the device owner key header into a headers object. */
+function withOwnerKey(headers: Record<string, string> = {}): Record<string, string> {
+  const key = getOwnerKey()
+  return key ? { ...headers, 'X-Owner-Key': key } : headers
+}
+
 /** Normalize FastAPI `detail` (string, object, or validation error list). */
 export function formatApiErrorDetail(detail: unknown): string {
   if (detail == null) return ''
@@ -68,7 +98,7 @@ export async function ragQuery(body: {
   ensureBrowser()
   const res = await fetch(`${API_BASE_URL}/api/v1/query`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withOwnerKey({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
 
@@ -121,7 +151,7 @@ export async function ragQueryStream(
   try {
     res = await fetch(`${API_BASE_URL}/api/v1/query/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withOwnerKey({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
       signal: combined,
     })
@@ -287,7 +317,7 @@ export async function ingestDocument(body: {
   ensureBrowser()
   const res = await fetch(`${API_BASE_URL}/api/v1/ingest`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withOwnerKey({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
 
@@ -315,7 +345,7 @@ export async function listDocuments(limit = 100, offset = 0, includeTotal = fals
 
     const res = await fetch(`${API_BASE_URL}/api/v1/documents?${params}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withOwnerKey({ 'Content-Type': 'application/json' }),
       signal: controller.signal,
     })
 
@@ -363,7 +393,7 @@ export async function getDocument(documentId: string): Promise<DocumentDetailPay
   const id = encodeDocumentPathSegment(documentId)
   const res = await fetch(`${API_BASE_URL}/api/v1/documents/${id}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withOwnerKey({ 'Content-Type': 'application/json' }),
   })
 
   if (!res.ok) {
@@ -388,6 +418,7 @@ export async function deleteDocument(documentId: string) {
   const id = encodeDocumentPathSegment(documentId)
   const res = await fetch(`${API_BASE_URL}/api/v1/documents/${id}`, {
     method: 'DELETE',
+    headers: withOwnerKey(),
   })
 
   if (!res.ok) {
@@ -695,7 +726,7 @@ export async function getDocumentChunks(documentId: string) {
   const id = encodeDocumentPathSegment(documentId)
   const res = await fetch(`${API_BASE_URL}/api/v1/documents/${id}/chunks`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withOwnerKey({ 'Content-Type': 'application/json' }),
   })
 
   if (!res.ok) {
@@ -734,6 +765,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
 
   const res = await fetch(`${API_BASE_URL}/api/v1/extract-text`, {
     method: 'POST',
+    headers: withOwnerKey(),
     body: formData,
   })
 

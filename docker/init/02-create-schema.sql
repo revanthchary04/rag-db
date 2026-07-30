@@ -8,6 +8,11 @@ CREATE TABLE IF NOT EXISTS documents (
   title TEXT,
   original_file BYTEA,
   original_media_type TEXT,
+  -- Per-device isolation: NULL owner_key = public/shared (seeded demo corpus),
+  -- non-NULL = private to the browser/device that uploaded it. NULL expires_at
+  -- = never expires; guest uploads set it to now + TTL for auto-cleanup.
+  owner_key TEXT,
+  expires_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
@@ -43,4 +48,9 @@ CREATE INDEX IF NOT EXISTS documents_source_idx ON documents (source);
 
 -- Index on documents created_at
 CREATE INDEX IF NOT EXISTS documents_created_at_idx ON documents (created_at DESC);
+
+-- Per-device isolation: filter by owner, sweep expired rows on a timer.
+CREATE INDEX IF NOT EXISTS documents_owner_key_idx ON documents (owner_key);
+CREATE INDEX IF NOT EXISTS documents_expires_at_idx ON documents (expires_at)
+  WHERE expires_at IS NOT NULL;
 

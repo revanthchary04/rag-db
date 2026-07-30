@@ -77,6 +77,10 @@ async def ingest_document_endpoint(
 
     original_bytes, original_media_type = _decode_optional_ingest_original(ingest_request)
 
+    # Per-device isolation: tag the upload with the caller's device key so it is
+    # visible only to that browser, and auto-expires after the configured TTL.
+    owner_key = (request.headers.get("x-owner-key") or "").strip() or None
+
     try:
         from app.rag.ingest import (
             DocumentTooLargeError,
@@ -91,6 +95,8 @@ async def ingest_document_endpoint(
             is_markdown=ingest_request.is_markdown,
             original_bytes=original_bytes,
             original_media_type=original_media_type,
+            owner_key=owner_key,
+            ttl_seconds=settings.GUEST_DOC_TTL_SECONDS,
         )
 
         logger.info(

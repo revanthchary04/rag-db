@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import time
 import uuid
@@ -17,6 +18,21 @@ from app.core.rate_limit_redis import get_redis_rate_limiter
 from app.db.session import close_db_pool, init_db_pool
 
 logger = structlog.get_logger()
+
+
+async def _expired_document_sweeper() -> None:
+    """Periodically delete expired guest documents (per-device TTL cleanup)."""
+    from app.db.queries import purge_expired_documents
+
+    interval = max(60, settings.GUEST_DOC_CLEANUP_INTERVAL_SECONDS)
+    while True:
+        try:
+            await purge_expired_documents()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Expired-document sweep failed")
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
@@ -42,6 +58,16 @@ async def lifespan(app: FastAPI):
     if redis_limiter:
         logger.info("Redis rate limiting enabled")
 
+    # Background sweep for expired guest documents (per-device TTL cleanup).
+    sweeper_task: asyncio.Task | None = None
+    if settings.GUEST_DOC_TTL_SECONDS > 0:
+        sweeper_task = asyncio.create_task(_expired_document_sweeper())
+        logger.info(
+            "Expired-document sweeper started",
+            ttl_seconds=settings.GUEST_DOC_TTL_SECONDS,
+            interval_seconds=settings.GUEST_DOC_CLEANUP_INTERVAL_SECONDS,
+        )
+
     try:
         yield
     finally:
@@ -49,6 +75,12 @@ async def lifespan(app: FastAPI):
         # asyncpg pool leaks (and under pytest, where each test gets its own event
         # loop, a leaked pool bound to a closed loop breaks every later test).
         logger.info("Shutting down application")
+        if sweeper_task:
+            sweeper_task.cancel()
+            try:
+                await sweeper_task
+            except (asyncio.CancelledError, Exception):
+                pass
         if redis_limiter:
             try:
                 await redis_limiter.close()
@@ -97,7 +129,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "PATCH"],
-    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-API-Key"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-API-Key", "X-Owner-Key"],
     expose_headers=["X-Request-ID"],
 )
 

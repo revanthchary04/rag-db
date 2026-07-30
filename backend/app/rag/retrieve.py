@@ -14,6 +14,7 @@ async def retrieve(
     top_k: int = 5,
     filters: dict[str, Any] | None = None,
     rag_model: str = "vector-similarity",
+    owner_key: str | None = None,
 ) -> list[RetrievedChunk]:
     """
     Retrieve similar chunks using the specified RAG model strategy.
@@ -25,6 +26,8 @@ async def retrieve(
             - source: Filter by exact source match
             - title: Filter by exact title match
         rag_model: RAG model to use (default: "vector-similarity")
+        owner_key: Requesting device key. Retrieval is restricted to that device's
+            documents plus the public corpus; None sees only public documents.
 
     Returns:
         List of RetrievedChunk objects, sorted by relevance (highest first)
@@ -53,7 +56,7 @@ async def retrieve(
                 "rag.filtered": bool(filters),
             },
         ) as span:
-            chunks = await strategy.retrieve(query, top_k, filters)
+            chunks = await strategy.retrieve(query, top_k, filters, owner_key)
             span.set("rag.result_count", len(chunks))
             if chunks:
                 # Top similarity score is the cheapest production signal for a

@@ -4,18 +4,24 @@ from typing import Any
 import asyncpg
 import structlog
 
+from app.db.ownership import visibility_sql
 from app.db.session import get_db_pool
 
 logger = structlog.get_logger()
 
 
-async def get_document_by_id(document_id: str) -> dict | None:
-    """Get a document by ID."""
+async def get_document_by_id(document_id: str, owner_key: str | None = None) -> dict | None:
+    """Get a document by ID, honoring per-device visibility.
+
+    When ``owner_key`` is provided, only that device's documents plus the public
+    corpus are visible; a document owned by another device returns None.
+    """
+    vis_sql, vis_params = visibility_sql(owner_key, 2, column_prefix="")
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         try:
             row = await conn.fetchrow(
-                """
+                f"""
                 SELECT
                     id,
                     source,
@@ -24,9 +30,10 @@ async def get_document_by_id(document_id: str) -> dict | None:
                     (original_file IS NOT NULL AND octet_length(original_file) > 0)
                         AS original_available
                 FROM documents
-                WHERE id = $1
+                WHERE id = $1{vis_sql}
                 """,
                 document_id,
+                *vis_params,
             )
         except asyncpg.exceptions.UndefinedColumnError:
             row = await conn.fetchrow(
@@ -74,41 +81,39 @@ async def search_chunks(
     query_embedding: list[float],
     top_k: int = 5,
     document_id: str | None = None,
+    owner_key: str | None = None,
 ) -> list[dict]:
-    """Search for similar chunks using vector similarity."""
+    """Search for similar chunks using vector similarity (per-device scoped)."""
     pool = await get_db_pool()
     embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
+    params: list[Any] = [embedding_str]
+    where = "c.embedding IS NOT NULL"
+    next_index = 2
     if document_id:
-        query = """
-            SELECT
-                id,
-                document_id,
-                chunk_index,
-                content,
-                metadata,
-                1 - (embedding <=> $1::vector) as similarity
-            FROM chunks
-            WHERE embedding IS NOT NULL AND document_id = $2
-            ORDER BY embedding <=> $1::vector
-            LIMIT $3
-        """
-        params = [embedding_str, document_id, top_k]
-    else:
-        query = """
-            SELECT
-                id,
-                document_id,
-                chunk_index,
-                content,
-                metadata,
-                1 - (embedding <=> $1::vector) as similarity
-            FROM chunks
-            WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> $1::vector
-            LIMIT $2
-        """
-        params = [embedding_str, top_k]
+        where += f" AND c.document_id = ${next_index}"
+        params.append(document_id)
+        next_index += 1
+
+    vis_sql, vis_params = visibility_sql(owner_key, next_index, column_prefix="d.")
+    params.extend(vis_params)
+    next_index += len(vis_params)
+
+    query = f"""
+        SELECT
+            c.id,
+            c.document_id,
+            c.chunk_index,
+            c.content,
+            c.metadata,
+            1 - (c.embedding <=> $1::vector) as similarity
+        FROM chunks c
+        INNER JOIN documents d ON c.document_id = d.id
+        WHERE {where}{vis_sql}
+        ORDER BY c.embedding <=> $1::vector
+        LIMIT ${next_index}
+    """
+    params.append(top_k)
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *params)
@@ -151,13 +156,26 @@ async def get_chunks_by_document_id(document_id: str) -> list[dict]:
         ]
 
 
-async def list_documents(limit: int = 100, offset: int = 0) -> list[dict]:
-    """List documents with pagination."""
+async def list_documents(
+    limit: int = 100, offset: int = 0, owner_key: str | None = None
+) -> list[dict]:
+    """List documents with pagination, honoring per-device visibility.
+
+    When ``owner_key`` is provided, the listing contains that device's documents
+    plus the public corpus (and excludes expired rows); None lists only public
+    documents.
+    """
     import asyncio
     import time
 
     start_time = time.time()
     logger.info("list_documents called", limit=limit, offset=offset)
+
+    # Visibility clause occupies $1.. ; LIMIT/OFFSET take the trailing two slots.
+    vis_sql, vis_params = visibility_sql(owner_key, 1, column_prefix="")
+    limit_index = len(vis_params) + 1
+    offset_index = len(vis_params) + 2
+    where_clause = f"WHERE 1=1{vis_sql}"
 
     try:
         pool = await get_db_pool()
@@ -175,7 +193,7 @@ async def list_documents(limit: int = 100, offset: int = 0) -> list[dict]:
             try:
                 rows = await asyncio.wait_for(
                     conn.fetch(
-                        """
+                        f"""
                         SELECT
                             id,
                             source,
@@ -184,8 +202,10 @@ async def list_documents(limit: int = 100, offset: int = 0) -> list[dict]:
                             (original_file IS NOT NULL AND octet_length(original_file) > 0)
                                 AS original_available
                         FROM documents
-                        LIMIT $1 OFFSET $2
+                        {where_clause}
+                        LIMIT ${limit_index} OFFSET ${offset_index}
                         """,
+                        *vis_params,
                         limit,
                         offset,
                     ),
@@ -193,6 +213,8 @@ async def list_documents(limit: int = 100, offset: int = 0) -> list[dict]:
                 )
                 include_original_col = True
             except asyncpg.exceptions.UndefinedColumnError:
+                # Legacy DB without the original_file/owner_key columns: fall back
+                # to an unscoped listing (pre-isolation schema).
                 rows = await asyncio.wait_for(
                     conn.fetch(
                         """
@@ -254,16 +276,49 @@ async def count_documents() -> int:
         return count or 0
 
 
-async def delete_document(document_id: str) -> bool:
-    """Delete a document and all its chunks (chunks are deleted via CASCADE)."""
+async def delete_document(document_id: str, owner_key: str | None = None) -> bool:
+    """Delete a document and all its chunks (chunks are deleted via CASCADE).
+
+    When ``owner_key`` is provided, only that device's own documents can be
+    deleted — the public corpus and other devices' documents are left untouched.
+    """
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         # Use RETURNING so success does not depend on asyncpg command-tag string formatting.
-        row = await conn.fetchrow(
-            "DELETE FROM documents WHERE id = $1 RETURNING id",
-            document_id,
-        )
+        if owner_key:
+            row = await conn.fetchrow(
+                "DELETE FROM documents WHERE id = $1 AND owner_key = $2 RETURNING id",
+                document_id,
+                owner_key,
+            )
+        else:
+            row = await conn.fetchrow(
+                "DELETE FROM documents WHERE id = $1 RETURNING id",
+                document_id,
+            )
         return row is not None
+
+
+async def purge_expired_documents() -> int:
+    """Delete documents whose ``expires_at`` has passed (chunks cascade).
+
+    Returns the number of documents removed. Safe to call on a legacy schema
+    without the ``expires_at`` column (returns 0).
+    """
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        try:
+            rows = await conn.fetch(
+                "DELETE FROM documents "
+                "WHERE expires_at IS NOT NULL AND expires_at <= NOW() "
+                "RETURNING id",
+            )
+        except asyncpg.exceptions.UndefinedColumnError:
+            return 0
+        count = len(rows)
+        if count:
+            logger.info("Purged expired guest documents", purged_count=count)
+        return count
 
 
 async def log_query(

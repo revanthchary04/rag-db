@@ -30,6 +30,11 @@ def _safe_inline_filename(title: str | None, doc_id: str, media_type: str) -> st
     return f"{safe}{ext}"
 
 
+def _owner_key(request: Request) -> str | None:
+    """Requesting device key from the X-Owner-Key header (per-device isolation)."""
+    return (request.headers.get("x-owner-key") or "").strip() or None
+
+
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents_endpoint(
     request: Request,
@@ -46,7 +51,7 @@ async def list_documents_endpoint(
     try:
         # Fetch documents first (no ordering for faster query)
         list_start = time.time()
-        documents = await list_documents(limit=limit, offset=offset)
+        documents = await list_documents(limit=limit, offset=offset, owner_key=_owner_key(request))
         list_time = (time.time() - list_start) * 1000
 
         # Only fetch total count if explicitly requested (frontend doesn't need it)
@@ -110,7 +115,7 @@ async def get_document_endpoint(
     document_id: str,
 ):
     """Get a document by ID."""
-    document = await get_document_by_id(document_id)
+    document = await get_document_by_id(document_id, owner_key=_owner_key(request))
     if not document:
         raise HTTPException(
             status_code=404,
@@ -130,14 +135,12 @@ async def get_document_endpoint(
 async def get_document_original_endpoint(
     document_id: str,
 ):
-    """Serve stored original binary (e.g. PDF) for inline preview."""
-    document = await get_document_by_id(document_id)
-    if not document:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Document {document_id} not found",
-        )
+    """Serve stored original binary (e.g. PDF) for inline preview.
 
+    This is loaded by an ``<iframe>``, which cannot send the X-Owner-Key header,
+    so it is not owner-scoped here. Access is gated instead by the document id,
+    which embeds a per-owner hash and is only known to the uploading device.
+    """
     blob = await fetch_document_original(document_id)
     if not blob:
         raise HTTPException(
@@ -146,7 +149,7 @@ async def get_document_original_endpoint(
         )
 
     data, media_type = blob
-    filename = _safe_inline_filename(document.get("title"), document_id, media_type)
+    filename = _safe_inline_filename(None, document_id, media_type)
     return Response(
         content=data,
         media_type=media_type,
@@ -162,8 +165,8 @@ async def get_document_chunks_endpoint(
     """Get all chunks for a document."""
     request_id = getattr(request.state, "request_id", "unknown")
 
-    # Verify document exists
-    document = await get_document_by_id(document_id)
+    # Verify document exists and is visible to this device
+    document = await get_document_by_id(document_id, owner_key=_owner_key(request))
     if not document:
         raise HTTPException(
             status_code=404,
@@ -204,9 +207,10 @@ async def delete_document_endpoint(
 ):
     """Delete a document and all its chunks."""
     request_id = getattr(request.state, "request_id", "unknown")
+    owner_key = _owner_key(request)
 
-    # Verify document exists
-    document = await get_document_by_id(document_id)
+    # Verify document exists and is visible to this device
+    document = await get_document_by_id(document_id, owner_key=owner_key)
     if not document:
         raise HTTPException(
             status_code=404,
@@ -214,7 +218,7 @@ async def delete_document_endpoint(
         )
 
     try:
-        deleted = await delete_document(document_id)
+        deleted = await delete_document(document_id, owner_key=owner_key)
         if not deleted:
             raise HTTPException(
                 status_code=500,

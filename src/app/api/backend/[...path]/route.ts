@@ -67,6 +67,11 @@ async function proxyRequest(request: NextRequest, pathSegments: string[]) {
       ...(request.headers.get('authorization')
         ? { authorization: request.headers.get('authorization')! }
         : {}),
+      // Per-device isolation: forward the caller's owner key so the backend can
+      // scope uploaded documents to this browser/device.
+      ...(request.headers.get('x-owner-key')
+        ? { 'x-owner-key': request.headers.get('x-owner-key')! }
+        : {}),
     }
 
     const backendApiKey = (process.env.BACKEND_API_KEY || process.env.AZURE_API_BACKEND_KEY)?.trim()

@@ -27,6 +27,7 @@ router = APIRouter()
 async def _prepare_rag_retrieval(
     query_request: QueryRequest,
     request_id: str,
+    owner_key: str | None = None,
 ) -> tuple[str | None, list[RetrievedChunk], str]:
     """Meta-query detection, optional document list context, and chunk retrieval."""
     from app.rag.retrieve import retrieve
@@ -56,7 +57,7 @@ async def _prepare_rag_retrieval(
             query=query_request.query,
         )
         try:
-            documents = await list_documents(limit=100, offset=0)
+            documents = await list_documents(limit=100, offset=0, owner_key=owner_key)
             if documents:
                 doc_list = []
                 for doc in documents:
@@ -106,6 +107,7 @@ async def _prepare_rag_retrieval(
         top_k=query_request.top_k,
         filters=query_request.filters,
         rag_model=rag_model,
+        owner_key=owner_key,
     )
     return document_list_context, retrieved_chunks, rag_model
 
@@ -137,12 +139,15 @@ async def query_endpoint(
             detail="Query cannot be empty",
         )
 
+    owner_key = (request.headers.get("x-owner-key") or "").strip() or None
+
     try:
         from app.rag.answer import generate_answer
 
         document_list_context, retrieved_chunks, rag_model = await _prepare_rag_retrieval(
             query_request,
             request_id,
+            owner_key,
         )
 
         # Generate answer from retrieved chunks (with document list context if meta-query)
@@ -342,10 +347,13 @@ async def query_stream_endpoint(
             detail="Query cannot be empty",
         )
 
+    owner_key = (request.headers.get("x-owner-key") or "").strip() or None
+
     try:
         document_list_context, retrieved_chunks, rag_model = await _prepare_rag_retrieval(
             query_request,
             request_id,
+            owner_key,
         )
     except RetrieveError as e:
         is_rate_limit = isinstance(e.__cause__, OpenAIRateLimitError) if e.__cause__ else False

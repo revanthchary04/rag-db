@@ -17,6 +17,7 @@ from typing import Any
 import structlog
 
 from app.core.tracing import span
+from app.db.ownership import visibility_sql
 from app.db.session import get_db_pool
 from app.llm.openai_client import OpenAIError, get_llm_client
 from app.rag.types import RetrievedChunk, RetrieveError
@@ -33,6 +34,7 @@ class RetrievalStrategy(ABC):
         query: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
+        owner_key: str | None = None,
     ) -> list[RetrievedChunk]:
         """
         Retrieve chunks based on the strategy.
@@ -41,6 +43,8 @@ class RetrievalStrategy(ABC):
             query: Search query text
             top_k: Number of results to return
             filters: Optional filters dict
+            owner_key: Requesting device key; restricts results to that device's
+                documents plus the public corpus (None sees only public documents)
 
         Returns:
             List of RetrievedChunk objects, sorted by relevance
@@ -56,6 +60,7 @@ class VectorSimilarityStrategy(RetrievalStrategy):
         query: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
+        owner_key: str | None = None,
     ) -> list[RetrievedChunk]:
         """Retrieve chunks using vector similarity search."""
         logger.info(
@@ -110,6 +115,12 @@ class VectorSimilarityStrategy(RetrievalStrategy):
                     params.append(filters["title"])
                     param_index += 1
 
+        # Per-device visibility: own documents + public corpus, not expired.
+        vis_sql, vis_params = visibility_sql(owner_key, param_index, column_prefix="d.")
+        base_query += vis_sql
+        params.extend(vis_params)
+        param_index += len(vis_params)
+
         # Order by similarity (highest first) and limit
         base_query += f"""
             ORDER BY c.embedding <=> $1::vector
@@ -163,6 +174,7 @@ class HybridSearchStrategy(RetrievalStrategy):
         query: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
+        owner_key: str | None = None,
     ) -> list[RetrievedChunk]:
         """Retrieve chunks using hybrid search (vector + BM25)."""
         logger.info("HybridSearchStrategy.retrieve called", query_length=len(query), top_k=top_k)
@@ -208,6 +220,13 @@ class HybridSearchStrategy(RetrievalStrategy):
             " AND " + " AND ".join(vector_filter_conditions) if vector_filter_conditions else ""
         )
 
+        # Per-device visibility for the vector arm (own docs + public, not expired).
+        vector_vis_sql, vector_vis_params = visibility_sql(
+            owner_key, vector_param_index, column_prefix="d."
+        )
+        vector_params.extend(vector_vis_params)
+        vector_param_index += len(vector_vis_params)
+
         # Vector similarity query
         vector_params.append(fetch_k)
         vector_query = f"""
@@ -224,6 +243,7 @@ class HybridSearchStrategy(RetrievalStrategy):
             INNER JOIN documents d ON c.document_id = d.id
             WHERE c.embedding IS NOT NULL
             {vector_filter_clause}
+            {vector_vis_sql}
             ORDER BY c.embedding <=> $1::vector
             LIMIT ${vector_param_index}
         """
@@ -250,6 +270,14 @@ class HybridSearchStrategy(RetrievalStrategy):
         bm25_filter_clause = (
             " AND " + " AND ".join(bm25_filter_conditions) if bm25_filter_conditions else ""
         )
+
+        # Per-device visibility for the BM25 arm (own docs + public, not expired).
+        bm25_vis_sql, bm25_vis_params = visibility_sql(
+            owner_key, bm25_param_index, column_prefix="d."
+        )
+        bm25_params.extend(bm25_vis_params)
+        bm25_param_index += len(bm25_vis_params)
+
         bm25_params.append(fetch_k)
 
         # BM25 keyword search query (using PostgreSQL full-text search)
@@ -267,6 +295,7 @@ class HybridSearchStrategy(RetrievalStrategy):
             INNER JOIN documents d ON c.document_id = d.id
             WHERE to_tsvector('english', c.content) @@ plainto_tsquery('english', $1)
             {bm25_filter_clause}
+            {bm25_vis_sql}
             ORDER BY bm25_score DESC
             LIMIT ${bm25_param_index}
         """
@@ -386,6 +415,7 @@ class RerankingStrategy(RetrievalStrategy):
         query: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
+        owner_key: str | None = None,
     ) -> list[RetrievedChunk]:
         """Retrieve chunks using reranking strategy."""
         logger.info("RerankingStrategy.retrieve called", query_length=len(query), top_k=top_k)
@@ -400,7 +430,7 @@ class RerankingStrategy(RetrievalStrategy):
             candidate_k=candidate_k,
             top_k=top_k,
         )
-        candidates = await vector_strategy.retrieve(query, candidate_k, filters)
+        candidates = await vector_strategy.retrieve(query, candidate_k, filters, owner_key)
         logger.info(
             "Reranking: initial retrieval complete",
             candidates_count=len(candidates),
@@ -499,6 +529,7 @@ class MultiQueryStrategy(RetrievalStrategy):
         query: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
+        owner_key: str | None = None,
     ) -> list[RetrievedChunk]:
         """Retrieve chunks using multi-query strategy."""
         logger.info("MultiQueryStrategy.retrieve called", query_length=len(query), top_k=top_k)
@@ -575,7 +606,7 @@ Return ONLY a JSON array of 3 query strings. Example: ["query 1", "query 2", "qu
                     query=q,
                     per_query_k=per_query_k,
                 )
-                candidates = await vector_strategy.retrieve(q, per_query_k, filters)
+                candidates = await vector_strategy.retrieve(q, per_query_k, filters, owner_key)
                 logger.info(
                     "Multi-query: retrieval complete for variation",
                     variation_number=i,
