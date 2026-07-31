@@ -107,6 +107,7 @@ const PurePreviewMessage = ({
             if (part.type === 'data-observability') {
               return (
                 <MessageObservability
+                  citedCount={citations.length}
                   data={part.data as Observability}
                   key={key}
                   onChunksClick={() =>

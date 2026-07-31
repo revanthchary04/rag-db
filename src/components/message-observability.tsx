@@ -13,9 +13,12 @@ type Item = { key: string; label: string; onClick?: () => void }
 
 export function MessageObservability({
   data,
+  citedCount,
   onChunksClick,
 }: {
   data: Observability
+  /** Number of chunks the LLM actually cited (matches what the panel displays). */
+  citedCount?: number
   /** Opens the retrieved-chunks / citations panel above when the chunks stat is clicked. */
   onChunksClick?: () => void
 }) {
@@ -32,11 +35,12 @@ export function MessageObservability({
   if (typeof totalTokens === 'number' && totalTokens > 0)
     items.push({ key: 'tokens', label: `${totalTokens} tok` })
   if (typeof data.retrievedCount === 'number') {
-    items.push({
-      key: 'chunks',
-      label: `${data.retrievedCount} retrieved`,
-      onClick: onChunksClick,
-    })
+    const cited = citedCount ?? data.retrievedCount
+    const label =
+      cited === data.retrievedCount
+        ? `${data.retrievedCount} chunks`
+        : `${cited} of ${data.retrievedCount} chunks`
+    items.push({ key: 'chunks', label, onClick: onChunksClick })
   }
   if (data.ragModel) items.push({ key: 'model', label: data.ragModel })
 
