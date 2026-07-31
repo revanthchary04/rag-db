@@ -34,7 +34,7 @@ export function MessageObservability({
   if (typeof data.retrievedCount === 'number') {
     items.push({
       key: 'chunks',
-      label: `${data.retrievedCount} chunks`,
+      label: `${data.retrievedCount} retrieved`,
       onClick: onChunksClick,
     })
   }
