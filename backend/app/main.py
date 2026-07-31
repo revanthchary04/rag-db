@@ -53,6 +53,16 @@ async def lifespan(app: FastAPI):
 
     await init_db_pool()
 
+    # Self-heal the per-device isolation schema. The backend image does not run
+    # Alembic on deploy, so ensure the owner_key/expires_at columns exist here
+    # (idempotent) rather than crashing retrieval on a not-yet-migrated database.
+    try:
+        from app.db.ownership import ensure_isolation_schema
+
+        await ensure_isolation_schema()
+    except Exception:
+        logger.exception("Failed to ensure per-device isolation schema")
+
     # Initialize Redis rate limiter if enabled
     redis_limiter = get_redis_rate_limiter()
     if redis_limiter:
