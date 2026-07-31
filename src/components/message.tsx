@@ -109,7 +109,9 @@ const PurePreviewMessage = ({
                 <MessageObservability
                   data={part.data as Observability}
                   key={key}
-                  onChunksClick={() => setCitationsMode('chunks')}
+                  onChunksClick={() =>
+                    setCitationsMode(prev => (prev === 'chunks' ? null : 'chunks'))
+                  }
                 />
               )
             }
