@@ -56,14 +56,11 @@ export function MessageCitations({
 
   if (!citations || citations.length === 0) return null
 
-  // Unique source documents vs total cited chunks. Multiple chunks often come from
-  // the same PDF, so "N sources" alone is misleading — show both explicitly.
+  // Show unique source documents only. Retrieval chunk count lives in the
+  // observability line below, so don't duplicate it here.
   const uniqueDocs = new Set(
     citations.map(c => c.document_id || c.source || c.title || '')
   ).size
-  const chunkCount = citations.length
-  const sourceLabel = `${uniqueDocs} source${uniqueDocs === 1 ? '' : 's'}`
-  const chunkLabel = `${chunkCount} chunk${chunkCount === 1 ? '' : 's'}`
 
   return (
     <div className="mt-1 flex flex-col gap-2" data-testid="message-citations">
@@ -74,9 +71,7 @@ export function MessageCitations({
         variant="outline"
       >
         <FileText className="size-3.5" />
-        {uniqueDocs === chunkCount
-          ? sourceLabel
-          : `${sourceLabel} · ${chunkLabel}`}
+        {uniqueDocs} source{uniqueDocs === 1 ? '' : 's'}
       </Button>
 
       {isOpen && (
