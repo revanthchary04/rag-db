@@ -10,7 +10,7 @@ import { Response } from './elements/response'
 import { SparklesIcon } from './icons'
 import { createCitationComponents } from './inline-citations'
 import { MessageActions } from './message-actions'
-import { MessageCitations } from './message-citations'
+import { MessageCitations, type CitationsMode } from './message-citations'
 import { MessageObservability } from './message-observability'
 
 const PurePreviewMessage = ({
@@ -32,12 +32,12 @@ const PurePreviewMessage = ({
   const citations =
     (message.parts?.find(part => part.type === 'data-citations')?.data as Citation[] | undefined) ??
     []
-  const [citationsOpen, setCitationsOpen] = useState(false)
+  const [citationsMode, setCitationsMode] = useState<CitationsMode | null>(null)
   const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
 
   const handleCitationClick = useCallback((n: number) => {
     setHighlightIndex(n - 1)
-    setCitationsOpen(true)
+    setCitationsMode('chunks')
   }, [])
 
   const citationComponents = useMemo(
@@ -98,8 +98,8 @@ const PurePreviewMessage = ({
                   citations={part.data as Citation[]}
                   highlightIndex={highlightIndex}
                   key={key}
-                  onOpenChange={setCitationsOpen}
-                  open={citationsOpen}
+                  mode={citationsMode}
+                  onModeChange={setCitationsMode}
                 />
               )
             }
@@ -109,7 +109,7 @@ const PurePreviewMessage = ({
                 <MessageObservability
                   data={part.data as Observability}
                   key={key}
-                  onChunksClick={() => setCitationsOpen(true)}
+                  onChunksClick={() => setCitationsMode('chunks')}
                 />
               )
             }

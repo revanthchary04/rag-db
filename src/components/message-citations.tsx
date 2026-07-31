@@ -24,57 +24,126 @@ function ScoreMeter({ score }: { score: number }) {
   )
 }
 
+export type CitationsMode = 'sources' | 'chunks'
+
+/** One unique source document rolled up from citations that share it. */
+type SourceGroup = {
+  key: string
+  title: string
+  source: string
+  chunkCount: number
+  topScore: number | null
+}
+
+function groupBySource(citations: Citation[]): SourceGroup[] {
+  const map = new Map<string, SourceGroup>()
+  for (const c of citations) {
+    const key = c.document_id || c.source || c.title || 'unknown'
+    const existing = map.get(key)
+    if (existing) {
+      existing.chunkCount += 1
+      if (typeof c.score === 'number') {
+        existing.topScore =
+          existing.topScore == null ? c.score : Math.max(existing.topScore, c.score)
+      }
+    } else {
+      map.set(key, {
+        key,
+        title: c.title || c.source || 'Untitled',
+        source: c.source || '',
+        chunkCount: 1,
+        topScore: typeof c.score === 'number' ? c.score : null,
+      })
+    }
+  }
+  return [...map.values()]
+}
+
 export function MessageCitations({
   citations,
-  open,
-  onOpenChange,
+  mode,
+  onModeChange,
   highlightIndex,
 }: {
   citations: Citation[]
-  /** Controlled open state (e.g. driven by an inline citation click). */
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
-  /** Index of a source to scroll to and emphasize. */
+  /** Which panel to show (controlled). Null closes the panel. */
+  mode?: CitationsMode | null
+  onModeChange?: (mode: CitationsMode | null) => void
+  /** Index of a chunk to scroll to and emphasize (only in chunks mode). */
   highlightIndex?: number | null
 }) {
-  const [internalOpen, setInternalOpen] = useState(false)
-  const isControlled = open !== undefined
-  const isOpen = isControlled ? open : internalOpen
+  const [internalMode, setInternalMode] = useState<CitationsMode | null>(null)
+  const isControlled = mode !== undefined
+  const activeMode = isControlled ? mode : internalMode
   const itemRefs = useRef<Array<HTMLLIElement | null>>([])
 
-  const setOpen = (next: boolean) => {
-    if (!isControlled) setInternalOpen(next)
-    onOpenChange?.(next)
+  const toggleMode = (next: CitationsMode) => {
+    const resolved = activeMode === next ? null : next
+    if (!isControlled) setInternalMode(resolved)
+    onModeChange?.(resolved)
   }
 
-  // Scroll the highlighted source into view when it changes while open.
   useEffect(() => {
-    if (isOpen && highlightIndex != null) {
+    if (activeMode === 'chunks' && highlightIndex != null) {
       itemRefs.current[highlightIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }
-  }, [isOpen, highlightIndex])
+  }, [activeMode, highlightIndex])
 
   if (!citations || citations.length === 0) return null
 
-  // Show unique source documents only. Retrieval chunk count lives in the
-  // observability line below, so don't duplicate it here.
-  const uniqueDocs = new Set(
-    citations.map(c => c.document_id || c.source || c.title || '')
-  ).size
+  const sourceGroups = groupBySource(citations)
+  const uniqueDocs = sourceGroups.length
 
   return (
     <div className="mt-1 flex flex-col gap-2" data-testid="message-citations">
-      <Button
-        className="w-fit gap-1.5 text-muted-foreground"
-        onClick={() => setOpen(!isOpen)}
-        size="sm"
-        variant="outline"
-      >
-        <FileText className="size-3.5" />
-        {uniqueDocs} source{uniqueDocs === 1 ? '' : 's'}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          className="w-fit gap-1.5 text-muted-foreground"
+          onClick={() => toggleMode('sources')}
+          size="sm"
+          variant={activeMode === 'sources' ? 'secondary' : 'outline'}
+        >
+          <FileText className="size-3.5" />
+          {uniqueDocs} source{uniqueDocs === 1 ? '' : 's'}
+        </Button>
+      </div>
 
-      {isOpen && (
+      {activeMode === 'sources' && (
+        <ol className="flex flex-col gap-1 rounded-lg border bg-muted/30 p-1.5 text-sm">
+          {sourceGroups.map((g, i) => (
+            <li
+              className="flex items-start gap-2.5 rounded-md px-2 py-2 hover:bg-muted/60"
+              key={g.key}
+            >
+              <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded bg-background ring-1 ring-border">
+                <FileText className="size-3 text-muted-foreground" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate font-medium text-foreground">{g.title}</span>
+                  {g.topScore != null && <ScoreMeter score={g.topScore} />}
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  {g.source && g.source !== g.title && (
+                    <>
+                      <span className="truncate font-mono">{g.source}</span>
+                      <span className="text-muted-foreground/40">·</span>
+                    </>
+                  )}
+                  <span className="shrink-0">
+                    {g.chunkCount} chunk{g.chunkCount === 1 ? '' : 's'} cited
+                  </span>
+                </div>
+              </div>
+              <span className="mt-0.5 shrink-0 font-mono text-[11px] text-muted-foreground">
+                #{i + 1}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {activeMode === 'chunks' && (
         <ol className="flex flex-col gap-1 rounded-lg border bg-muted/30 p-1.5 text-sm">
           {citations.map((c, i) => (
             <li
@@ -119,3 +188,4 @@ export function MessageCitations({
     </div>
   )
 }
+
