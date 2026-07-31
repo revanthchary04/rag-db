@@ -228,6 +228,8 @@ async def query_endpoint(
                 token_usage=answer_response.token_usage,
                 citations_count=len(answer_response.citations),
                 answer_length=len(answer_response.answer) if answer_response.answer else None,
+                owner_key=owner_key,
+                ttl_seconds=settings.GUEST_DOC_TTL_SECONDS,
             )
         except Exception as e:
             logger.warning(
@@ -410,6 +412,8 @@ async def query_stream_endpoint(
                             token_usage=event.get("token_usage"),
                             citations_count=len(citations),
                             answer_length=len(ans) if ans else None,
+                            owner_key=owner_key,
+                            ttl_seconds=settings.GUEST_DOC_TTL_SECONDS,
                         )
                     except Exception as log_err:
                         logger.warning(

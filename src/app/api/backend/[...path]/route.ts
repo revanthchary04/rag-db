@@ -1,9 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/app/(auth)/auth'
 
 // Backend URL - server-side only (no NEXT_PUBLIC_ prefix needed).
 // `BACKEND_API_BASE_URL` is canonical; `AZURE_API_BASE_URL` is a back-compat fallback.
 const base =
   process.env.BACKEND_API_BASE_URL || process.env.AZURE_API_BASE_URL || 'http://localhost:8000'
+
+/**
+ * Isolation key sent as X-Owner-Key so the backend can scope documents and query
+ * logs to the caller. Regular (logged-in) users get "user:<id>" so their data
+ * follows them across devices; guests keep the per-device localStorage UUID.
+ */
+async function resolveOwnerKey(request: NextRequest): Promise<string> {
+  try {
+    const session = await auth()
+    const type = (session?.user as { type?: string } | undefined)?.type
+    if (session?.user?.id && type === 'regular') {
+      return `user:${session.user.id}`
+    }
+  } catch {
+    // If auth resolution fails, fall through to the device key.
+  }
+  return request.headers.get('x-owner-key') ?? ''
+}
 
 type RouteContext = { params: Promise<{ path: string[] }> }
 
@@ -63,15 +82,14 @@ async function proxyRequest(request: NextRequest, pathSegments: string[]) {
 
     // Forward specific headers (matching Pages Router pattern)
     // Don't set content-type for FormData - fetch will set it automatically with boundary
+    const ownerKey = await resolveOwnerKey(request)
     const headers: Record<string, string> = {
       ...(request.headers.get('authorization')
         ? { authorization: request.headers.get('authorization')! }
         : {}),
-      // Per-device isolation: forward the caller's owner key so the backend can
-      // scope uploaded documents to this browser/device.
-      ...(request.headers.get('x-owner-key')
-        ? { 'x-owner-key': request.headers.get('x-owner-key')! }
-        : {}),
+      // Isolation: real users get a stable "user:<id>" key (works across devices);
+      // guests fall back to the browser-local device UUID.
+      ...(ownerKey ? { 'x-owner-key': ownerKey } : {}),
     }
 
     const backendApiKey = (process.env.BACKEND_API_KEY || process.env.AZURE_API_BACKEND_KEY)?.trim()

@@ -177,9 +177,11 @@ async def ingest_document(
             f"Document size ({len(text)} chars) exceeds maximum ({MAX_DOCUMENT_SIZE} chars)"
         )
 
-    # Only owned (guest) uploads expire; the public seeded corpus is permanent.
+    # Only guest (device-keyed) uploads expire; the public seeded corpus and
+    # logged-in user uploads (owner_key = "user:<id>") are permanent.
     expires_at = None
-    if owner_key and ttl_seconds and ttl_seconds > 0:
+    is_guest = owner_key and not owner_key.startswith("user:")
+    if is_guest and ttl_seconds and ttl_seconds > 0:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
 
     # Resolve document identity: replace in place, new versioned row, or new doc

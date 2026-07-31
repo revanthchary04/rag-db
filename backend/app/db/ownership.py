@@ -60,6 +60,19 @@ async def ensure_isolation_schema() -> bool:
                 "CREATE INDEX IF NOT EXISTS documents_expires_at_idx "
                 "ON documents (expires_at) WHERE expires_at IS NOT NULL"
             )
+            # Same isolation for the audit log so guest query history disappears with
+            # the guest's documents (and never leaks across devices).
+            await conn.execute("ALTER TABLE queries ADD COLUMN IF NOT EXISTS owner_key TEXT")
+            await conn.execute(
+                "ALTER TABLE queries ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS queries_owner_key_idx ON queries (owner_key)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS queries_expires_at_idx "
+                "ON queries (expires_at) WHERE expires_at IS NOT NULL"
+            )
             _isolation_available = True
             logger.info("Per-device document isolation schema ensured")
         except Exception as exc:

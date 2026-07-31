@@ -612,7 +612,7 @@ export async function fetchQueryLogDetail(queryId: string): Promise<QueryLogDeta
   const id = encodeURIComponent(queryId)
   const res = await fetch(`${API_BASE_URL}/api/v1/analytics/query-log/${id}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withOwnerKey({ 'Content-Type': 'application/json' }),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -637,7 +637,7 @@ export async function fetchQueryLogsList(params?: {
   if (params?.end_date?.trim()) q.set('end_date', params.end_date.trim())
   const res = await fetch(`${API_BASE_URL}/api/v1/analytics/query-logs?${q}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withOwnerKey({ 'Content-Type': 'application/json' }),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')

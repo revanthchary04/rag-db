@@ -1,5 +1,5 @@
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.db.analytics_queries import list_chat_query_links
 from app.db.queries import (
@@ -18,10 +18,18 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+def _owner_key(request: Request) -> str | None:
+    """Requesting device key from the X-Owner-Key header (per-device isolation)."""
+    return (request.headers.get("x-owner-key") or "").strip() or None
+
+
 @router.get("/analytics/chat-query-links", response_model=ChatQueryLinksResponse)
-async def chat_query_links_endpoint(limit: int = Query(50, ge=1, le=200)):
+async def chat_query_links_endpoint(
+    request: Request,
+    limit: int = Query(50, ge=1, le=200),
+):
     """Recent chat messages linked to ``queries`` rows (via ``query_log_id``)."""
-    rows = await list_chat_query_links(limit=limit)
+    rows = await list_chat_query_links(limit=limit, owner_key=_owner_key(request))
     return ChatQueryLinksResponse(
         links=[ChatQueryLinkItem(**row) for row in rows],
     )
@@ -29,6 +37,7 @@ async def chat_query_links_endpoint(limit: int = Query(50, ge=1, le=200)):
 
 @router.get("/analytics/query-logs", response_model=QueryLogsListResponse)
 async def query_logs_list_endpoint(
+    request: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     rag_model: str | None = None,
@@ -42,14 +51,15 @@ async def query_logs_list_endpoint(
         rag_model=rag_model,
         start_date=start_date,
         end_date=end_date,
+        owner_key=_owner_key(request),
     )
     return QueryLogsListResponse(logs=[QueryLogDetailResponse(**r) for r in rows])
 
 
 @router.get("/analytics/query-log/{query_id}", response_model=QueryLogDetailResponse)
-async def query_log_detail_endpoint(query_id: str):
+async def query_log_detail_endpoint(request: Request, query_id: str):
     """Return one ``queries`` row for observability drill-down from ``query_log_id``."""
-    row = await get_query_log_by_id(query_id)
+    row = await get_query_log_by_id(query_id, owner_key=_owner_key(request))
     if not row:
         raise HTTPException(status_code=404, detail="Query log not found")
     return QueryLogDetailResponse(**row)

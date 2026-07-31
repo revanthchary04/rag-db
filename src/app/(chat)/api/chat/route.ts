@@ -105,8 +105,14 @@ export async function POST(request: Request) {
 
   const query = getTextFromMessage(message as ChatMessage)
 
-  // Forward the per-device owner key so retrieval is scoped to this browser's uploads.
-  const ownerKey = request.headers.get('x-owner-key') ?? ''
+  // Isolation key: regular (logged-in) users get a stable "user:<id>" so their
+  // documents and query history follow them across devices; guests fall back to
+  // the browser-local device UUID sent in the X-Owner-Key header.
+  const sessionType = (session.user as { type?: string }).type
+  const ownerKey =
+    sessionType === 'regular' && session.user.id
+      ? `user:${session.user.id}`
+      : (request.headers.get('x-owner-key') ?? '')
 
   // Captured from the backend `done` event, persisted after the stream ends.
   let capturedCitations: Citation[] = []

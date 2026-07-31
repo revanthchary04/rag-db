@@ -7,16 +7,21 @@ from typing import Any
 from app.db.session import get_db_pool
 
 
-async def list_chat_query_links(limit: int = 50) -> list[dict[str, Any]]:
+async def list_chat_query_links(
+    limit: int = 50, owner_key: str | None = None
+) -> list[dict[str, Any]]:
     """
     Rows where a chat message references ``queries.id`` via ``query_log_id``.
 
-    Newest assistant/user messages with audit linkage first.
+    Newest assistant/user messages with audit linkage first. Scoped to the caller's
+    device: with a key, only their own + never-expired public rows; without one,
+    only public/legacy rows.
     """
+    from app.db.ownership import isolation_available
+
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
+        base = """
             SELECT
               cm.id AS message_id,
               cm.thread_id,
@@ -30,11 +35,18 @@ async def list_chat_query_links(limit: int = 50) -> list[dict[str, Any]]:
               q.created_at AS query_logged_at
             FROM chat_messages cm
             INNER JOIN queries q ON q.id = cm.query_log_id
-            ORDER BY cm.created_at DESC
-            LIMIT $1
-            """,
-            limit,
-        )
+        """
+        params: list[Any] = []
+        if isolation_available():
+            base += " WHERE (q.expires_at IS NULL OR q.expires_at > NOW())"
+            if owner_key:
+                params.append(owner_key)
+                base += f" AND (q.owner_key IS NULL OR q.owner_key = ${len(params)})"
+            else:
+                base += " AND q.owner_key IS NULL"
+        params.append(limit)
+        base += f" ORDER BY cm.created_at DESC LIMIT ${len(params)}"
+        rows = await conn.fetch(base, *params)
 
     out: list[dict[str, Any]] = []
     for r in rows:

@@ -324,6 +324,19 @@ async def purge_expired_documents() -> int:
         count = len(rows)
         if count:
             logger.info("Purged expired guest documents", purged_count=count)
+
+        # Guest query history rides the same TTL — sweep it in the same pass so
+        # a guest never sees an old device's questions after their docs are gone.
+        try:
+            query_rows = await conn.fetch(
+                "DELETE FROM queries "
+                "WHERE expires_at IS NOT NULL AND expires_at <= NOW() "
+                "RETURNING id",
+            )
+            if query_rows:
+                logger.info("Purged expired guest query logs", purged_count=len(query_rows))
+        except asyncpg.exceptions.UndefinedColumnError:
+            pass
         return count
 
 
@@ -338,6 +351,8 @@ async def log_query(
     token_usage: dict | None = None,
     citations_count: int = 0,
     answer_length: int | None = None,
+    owner_key: str | None = None,
+    ttl_seconds: int | None = None,
 ) -> str | None:
     """
     Log a query to the database for monitoring and analytics.
@@ -346,7 +361,17 @@ async def log_query(
     Errors are swallowed so callers can still return the HTTP response.
     """
     import uuid
+    from datetime import datetime, timedelta, timezone
     from decimal import Decimal
+
+    from app.db.ownership import isolation_available
+
+    # Guest queries expire on the same clock as guest documents so history vanishes
+    # together. Logged-in users (owner_key = "user:<id>") keep their history forever.
+    expires_at = None
+    is_guest = owner_key and not owner_key.startswith("user:")
+    if is_guest and ttl_seconds and ttl_seconds > 0:
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
 
     try:
         # Calculate cost from token usage
@@ -370,27 +395,53 @@ async def log_query(
 
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO queries (
-                    id, query_text, rag_model, top_k, request_id, client_ip, user_agent,
-                    latency_ms, token_usage, cost_usd, citations_count, answer_length
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                RETURNING id
-                """,
-                str(uuid.uuid4()),
-                query_text,
-                rag_model,
-                top_k,
-                request_id,
-                client_ip,
-                user_agent,
-                latency_ms,
-                json.dumps(token_usage) if token_usage else None,
-                float(cost_usd) if cost_usd else None,
-                citations_count,
-                answer_length,
-            )
+            if isolation_available():
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO queries (
+                        id, query_text, rag_model, top_k, request_id, client_ip, user_agent,
+                        latency_ms, token_usage, cost_usd, citations_count, answer_length,
+                        owner_key, expires_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                    RETURNING id
+                    """,
+                    str(uuid.uuid4()),
+                    query_text,
+                    rag_model,
+                    top_k,
+                    request_id,
+                    client_ip,
+                    user_agent,
+                    latency_ms,
+                    json.dumps(token_usage) if token_usage else None,
+                    float(cost_usd) if cost_usd else None,
+                    citations_count,
+                    answer_length,
+                    owner_key,
+                    expires_at,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO queries (
+                        id, query_text, rag_model, top_k, request_id, client_ip, user_agent,
+                        latency_ms, token_usage, cost_usd, citations_count, answer_length
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    RETURNING id
+                    """,
+                    str(uuid.uuid4()),
+                    query_text,
+                    rag_model,
+                    top_k,
+                    request_id,
+                    client_ip,
+                    user_agent,
+                    latency_ms,
+                    json.dumps(token_usage) if token_usage else None,
+                    float(cost_usd) if cost_usd else None,
+                    citations_count,
+                    answer_length,
+                )
             return str(row["id"]) if row else None
     except Exception as e:
         # Log error but don't fail the query
@@ -409,6 +460,7 @@ async def get_query_logs(
     rag_model: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    owner_key: str | None = None,
 ) -> list[dict]:
     """
     Get query logs with optional filtering.
@@ -423,6 +475,8 @@ async def get_query_logs(
     Returns:
         List of query log dictionaries
     """
+    from app.db.ownership import isolation_available
+
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         query = """
@@ -449,6 +503,16 @@ async def get_query_logs(
             param_count += 1
             query += f" AND created_at <= ${param_count}::timestamp"
             params.append(end_date)
+
+        # Per-device visibility: this device's own logs, plus never-expired public rows.
+        if isolation_available():
+            query += " AND (expires_at IS NULL OR expires_at > NOW())"
+            if owner_key:
+                param_count += 1
+                query += f" AND (owner_key IS NULL OR owner_key = ${param_count})"
+                params.append(owner_key)
+            else:
+                query += " AND owner_key IS NULL"
 
         query += (
             " ORDER BY created_at DESC LIMIT $"
@@ -479,20 +543,45 @@ async def get_query_logs(
         ]
 
 
-async def get_query_log_by_id(query_id: str) -> dict | None:
-    """Return one row from ``queries`` by primary key, or None."""
+async def get_query_log_by_id(query_id: str, owner_key: str | None = None) -> dict | None:
+    """Return one row from ``queries`` by primary key, or None.
+
+    When ``owner_key`` is provided, only that device's own rows (plus public/legacy
+    rows with ``owner_key IS NULL``) are returned; expired rows are hidden.
+    """
+    from app.db.ownership import isolation_available
+
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
+        if isolation_available():
+            base = """
+                SELECT
+                    id, query_text, rag_model, top_k, request_id, client_ip, user_agent,
+                    latency_ms, token_usage, cost_usd, citations_count, answer_length,
+                    created_at
+                FROM queries
+                WHERE id = $1 AND (expires_at IS NULL OR expires_at > NOW())
             """
-            SELECT
-                id, query_text, rag_model, top_k, request_id, client_ip, user_agent,
-                latency_ms, token_usage, cost_usd, citations_count, answer_length, created_at
-            FROM queries
-            WHERE id = $1
-            """,
-            query_id,
-        )
+            if owner_key:
+                row = await conn.fetchrow(
+                    base + " AND (owner_key IS NULL OR owner_key = $2)",
+                    query_id,
+                    owner_key,
+                )
+            else:
+                row = await conn.fetchrow(base + " AND owner_key IS NULL", query_id)
+        else:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    id, query_text, rag_model, top_k, request_id, client_ip, user_agent,
+                    latency_ms, token_usage, cost_usd, citations_count, answer_length,
+                    created_at
+                FROM queries
+                WHERE id = $1
+                """,
+                query_id,
+            )
     if not row:
         return None
     tu = row["token_usage"]
