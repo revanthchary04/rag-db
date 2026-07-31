@@ -9,6 +9,7 @@ import { unstable_serialize } from 'swr/infinite'
 import { ChatHeader } from '@/components/chat-header'
 import { useRagSettings, type RagModel } from '@/features/settings/useRagSettings'
 import { ChatSDKError } from '@/lib/errors'
+import { getOwnerKey } from '@/lib/api/client'
 import type { ChatMessage } from '@/lib/types'
 import { generateUUID } from '@/lib/utils'
 import { Messages } from './messages'
@@ -53,7 +54,11 @@ export function Chat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
       prepareSendMessagesRequest(request) {
+        const ownerKey = getOwnerKey()
+        const headers: Record<string, string> = {}
+        if (ownerKey) headers['x-owner-key'] = ownerKey
         return {
+          headers,
           body: {
             id: request.id,
             message: request.messages.at(-1),

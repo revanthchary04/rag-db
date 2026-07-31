@@ -31,6 +31,8 @@ class DocumentResponse(BaseModel):
     title: str | None = None
     created_at: str | None = None
     original_available: bool = False
+    expires_at: str | None = None
+    """When this guest upload is auto-deleted (None = never expires / public corpus)."""
 
 
 class DocumentListResponse(BaseModel):

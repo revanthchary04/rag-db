@@ -105,6 +105,9 @@ export async function POST(request: Request) {
 
   const query = getTextFromMessage(message as ChatMessage)
 
+  // Forward the per-device owner key so retrieval is scoped to this browser's uploads.
+  const ownerKey = request.headers.get('x-owner-key') ?? ''
+
   // Captured from the backend `done` event, persisted after the stream ends.
   let capturedCitations: Citation[] = []
   let capturedObs: Observability = {}
@@ -121,6 +124,7 @@ export async function POST(request: Request) {
         headers: {
           'content-type': 'application/json',
           ...(BACKEND_KEY ? { 'x-api-key': BACKEND_KEY } : {}),
+          ...(ownerKey ? { 'x-owner-key': ownerKey } : {}),
         },
         body: JSON.stringify({
           query,

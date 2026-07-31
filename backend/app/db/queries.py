@@ -199,6 +199,7 @@ async def list_documents(
                             source,
                             title,
                             created_at,
+                            expires_at,
                             (original_file IS NOT NULL AND octet_length(original_file) > 0)
                                 AS original_available
                         FROM documents
@@ -243,6 +244,11 @@ async def list_documents(
                     "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                     "original_available": (
                         bool(row["original_available"]) if include_original_col else False
+                    ),
+                    "expires_at": (
+                        row["expires_at"].isoformat()
+                        if include_original_col and row["expires_at"]
+                        else None
                     ),
                 }
                 for row in rows

@@ -74,6 +74,7 @@ async def list_documents_endpoint(
                     title=doc["title"],
                     created_at=doc["created_at"],
                     original_available=doc.get("original_available", False),
+                    expires_at=doc.get("expires_at"),
                 )
                 for doc in documents
             ],

@@ -386,6 +386,8 @@ export interface DocumentDetailPayload {
   title?: string | null
   created_at?: string | null
   original_available: boolean
+  /** ISO timestamp when a guest upload auto-deletes (null = never expires). */
+  expires_at?: string | null
 }
 
 export async function getDocument(documentId: string): Promise<DocumentDetailPayload> {
